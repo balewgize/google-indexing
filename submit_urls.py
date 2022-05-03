@@ -4,17 +4,19 @@ Python Script to Extract Post URL from Sitemap & Submit to an API
 import os
 import csv
 import json
+import time
 import requests
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 
-def save_urls_to_csv():
+def save_urls_to_csv(url):
     """Save all URLs to be submitted to a CSV file."""
+    print("Fetching URLs from the website...")
     try:
         filename = "PostURLs.csv"
-        r = requests.get("https://squirrelarena.com/export.php")
+        r = requests.get(url)
         r.raise_for_status()
         urls = r.text.strip().split()
         with open(filename, mode="w", encoding="utf-8", newline="") as f:
@@ -73,14 +75,14 @@ def prepare_urls_for_submission(urls_to_be_submitted, submitted_urls):
             all_batches.append(one_batch)
             one_batch = []
 
-    all_batches.append(one_batch)  # if there are URLs less than hundred at the end
+    if one_batch:
+        all_batches.append(one_batch)  # if there are URLs less than hundred at the end
     return all_batches
 
 
 def insert_event(id, response, exception):
     if exception is not None:
-        # print(exception)
-        print("Failed.")
+        print("FAILED: ", exception)
     else:
         # print(response)
         print("Success.")
@@ -106,22 +108,58 @@ def submit_urls_in_batch(urls, key):
     save_submitted_urls(filename, urls)
 
 
-save_urls_to_csv()
+url = "https://nofly90.com/export.php"
 
-# Read URLs to be submitted from Posturls.csv
-urls_to_be_submitted = read_csv("PostURLs.csv")
+while True:
+    save_urls_to_csv(url)
 
-# Read submitted URLs from SubmittedURLs.csv
-submitted_urls = read_csv("SubmittedURLs.csv")
+    # Read URLs to be submitted from Posturls.csv
+    urls_to_be_submitted = read_csv("PostURLs.csv")
 
-# list of 100 credential keys
-keys = read_credentials("API_KEYS.csv")
+    # Read submitted URLs from SubmittedURLs.csv
+    submitted_urls = read_csv("SubmittedURLs.csv")
 
-# list of URL batches for submission
-urls = prepare_urls_for_submission(urls_to_be_submitted, submitted_urls)
+    # list of 100 credential keys
+    keys = read_credentials("API_KEYS.csv")
 
-i = 1
-for batch, key in zip(urls, keys):
-    print(f"Submitting URLs using key {i}...")
-    submit_urls_in_batch(batch, key)
-    i += 1
+    # list of URL batches for submission
+    urls = prepare_urls_for_submission(urls_to_be_submitted, submitted_urls)
+    i = 0
+    counter = 1
+
+    for key in keys:
+        pair_batches = urls[i : i + 2]
+
+        if pair_batches != []:
+            if len(pair_batches) == 2:
+                first_batch, second_batch = pair_batches[:]
+            else:
+                first_batch = pair_batches[0]
+                second_batch = []
+
+            # submit the first 100 URLs using the key
+            if first_batch:
+                print(f"\nSubmitting URLs using KEY {counter:02}...")
+                submit_urls_in_batch(first_batch, key)
+                print(f"{counter:02} Waiting for 7.5 minutes...")
+                time.sleep(450)  # wait 7.5 minutes (7.5 * 60 = 450 seconds)
+
+            # submit the second 100 URLs using the key
+            if second_batch:
+                submit_urls_in_batch(second_batch, key)
+                print(f"KEY {counter:02} fully used.\n")
+                print(f"{counter:02} Waiting for 7.5 minutes...")
+                time.sleep(450)  # wait 7.5 minutes before moving to the next key
+
+            # daily quota for one key (200 submission) is reached, move to the next key
+            counter += 1
+            i += 2
+        else:
+            # all urls are submitted, check the website again
+            save_urls_to_csv(url)
+            urls_to_be_submitted = read_csv("PostURLs.csv")
+            submitted_urls = read_csv("SubmittedURLs.csv")
+            urls = prepare_urls_for_submission(urls_to_be_submitted, submitted_urls)
+            i = 0
+
+    print("\nAll of 100 keys fully used. Starting again from key1.\n")
