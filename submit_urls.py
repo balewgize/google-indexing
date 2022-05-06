@@ -6,6 +6,7 @@ import csv
 import json
 import time
 import requests
+from bs4 import BeautifulSoup
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -18,14 +19,30 @@ def save_urls_to_csv(url):
         filename = "PostURLs.csv"
         r = requests.get(url)
         r.raise_for_status()
-        urls = r.text.strip().split()
-        with open(filename, mode="w", encoding="utf-8", newline="") as f:
-            csv_writer = csv.writer(f)
-            [csv_writer.writerow([url]) for url in urls]
+
+        soup = BeautifulSoup(r.content, "html.parser")
+        site_maps = soup.find_all("loc")
+        for s in site_maps:
+            try:
+                url = s.text.strip()
+                r = requests.get(url)
+                r.raise_for_status()
+
+                soup = BeautifulSoup(r.content, "html.parser")
+                urls = soup.find_all("loc")
+
+                with open(filename, mode="a", encoding="utf-8", newline="") as f:
+                    csv_writer = csv.writer(f)
+                    [csv_writer.writerow([url.text.strip()]) for url in urls]
+
+            except requests.HTTPError as e:
+                print(e)
+            except Exception as e:
+                print(f"Error while scraping sitemap {url}: {e}")
     except requests.HTTPError as e:
         print(e)
     except Exception as e:
-        print("ERROR: ", e)
+        print(f"Error while saving URLs to CSV {e}")
     return None
 
 
@@ -124,6 +141,7 @@ while True:
 
     # list of URL batches for submission
     urls = prepare_urls_for_submission(urls_to_be_submitted, submitted_urls)
+
     i = 0
     counter = 1
 
@@ -162,4 +180,4 @@ while True:
             urls = prepare_urls_for_submission(urls_to_be_submitted, submitted_urls)
             i = 0
 
-    print("\nAll of 100 keys fully used. Starting again from key1.\n")
+    print("\nAll of 100 keys fully used. Starting again from KEY 1.\n")
