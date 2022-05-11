@@ -162,3 +162,4 @@ cython_debug/
 # local config files
 config.py
 local_only/
+output/

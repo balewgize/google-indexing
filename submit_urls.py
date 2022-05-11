@@ -4,7 +4,7 @@ Python Script to Extract Post URL from Sitemap & Submit to an API
 import os
 import csv
 import json
-import time
+import sys
 import requests
 from bs4 import BeautifulSoup
 
@@ -20,25 +20,22 @@ def save_urls_to_csv(url):
         r = requests.get(url)
         r.raise_for_status()
 
-        soup = BeautifulSoup(r.content, "html.parser")
-        site_maps = soup.find_all("loc")
-        for s in site_maps:
-            try:
-                url = s.text.strip()
-                r = requests.get(url)
-                r.raise_for_status()
-
-                soup = BeautifulSoup(r.content, "html.parser")
-                urls = soup.find_all("loc")
-
-                with open(filename, mode="a", encoding="utf-8", newline="") as f:
-                    csv_writer = csv.writer(f)
+        with open(filename, mode="w", encoding="utf-8", newline="") as f:
+            csv_writer = csv.writer(f)
+            soup = BeautifulSoup(r.content, "lxml")
+            site_maps = soup.find_all("loc")
+            for s in site_maps:
+                try:
+                    url = s.text.strip()
+                    r = requests.get(url)
+                    r.raise_for_status()
+                    soup = BeautifulSoup(r.content, "lxml")
+                    urls = soup.find_all("loc")
                     [csv_writer.writerow([url.text.strip()]) for url in urls]
-
-            except requests.HTTPError as e:
-                print(e)
-            except Exception as e:
-                print(f"Error while scraping sitemap {url}: {e}")
+                except requests.HTTPError as e:
+                    print(e)
+                except Exception as e:
+                    print(f"Error while scraping sitemap {url}: {e}")
     except requests.HTTPError as e:
         print(e)
     except Exception as e:
@@ -125,9 +122,11 @@ def submit_urls_in_batch(urls, key):
     save_submitted_urls(filename, urls)
 
 
-url = "https://nofly90.com/export.php"
+url = "https://nofly90.com/sitemap_index.xml"
 
 while True:
+    num_of_checks = 0
+
     save_urls_to_csv(url)
 
     # Read URLs to be submitted from Posturls.csv
@@ -160,14 +159,14 @@ while True:
                 print(f"\nSubmitting URLs using KEY {counter:02}...")
                 submit_urls_in_batch(first_batch, key)
                 print(f"{counter:02} Waiting for 7.5 minutes...")
-                time.sleep(450)  # wait 7.5 minutes (7.5 * 60 = 450 seconds)
+                # time.sleep(450)  # wait 7.5 minutes (7.5 * 60 = 450 seconds)
 
             # submit the second 100 URLs using the key
             if second_batch:
                 submit_urls_in_batch(second_batch, key)
                 print(f"KEY {counter:02} fully used.\n")
                 print(f"{counter:02} Waiting for 7.5 minutes...")
-                time.sleep(450)  # wait 7.5 minutes before moving to the next key
+                # time.sleep(450)  # wait 7.5 minutes before moving to the next key
 
             # daily quota for one key (200 submission) is reached, move to the next key
             counter += 1
@@ -179,5 +178,12 @@ while True:
             submitted_urls = read_csv("SubmittedURLs.csv")
             urls = prepare_urls_for_submission(urls_to_be_submitted, submitted_urls)
             i = 0
+
+        if urls == []:
+            num_of_checks += 1
+
+        if num_of_checks > 2:
+            print("\nNo new URLs need to be indexed.\nExtting...")
+            sys.exit(0)
 
     print("\nAll of 100 keys fully used. Starting again from KEY 1.\n")
